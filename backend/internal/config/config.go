@@ -6,20 +6,23 @@ import (
 )
 
 type Config struct {
-	DatabaseURL        string
-	OpenWeatherAPIKey  string
-	OpenCageAPIKey     string
-	GoogleMapsAPIKey   string
-	GoogleClientID     string
-	GoogleClientSecret string
-	FrontendURL        string
-	Port               string
+	DatabaseURL         string
+	OpenWeatherAPIKey   string
+	OpenCageAPIKey      string
+	OSRMBaseURL         string
+	OpenFreeMapStyleURL string
+	CookieSecure        bool
+	GoogleClientID      string
+	GoogleClientSecret  string
+	FrontendURL         string
+	Port                string
 }
 
 func Load() (Config, error) {
 	cfg := Config{
 		DatabaseURL: os.Getenv("DATABASE_URL"), OpenWeatherAPIKey: os.Getenv("OPENWEATHER_API_KEY"),
-		OpenCageAPIKey: os.Getenv("OPENCAGE_API_KEY"), GoogleMapsAPIKey: os.Getenv("GOOGLE_MAPS_API_KEY"),
+		OpenCageAPIKey: os.Getenv("OPENCAGE_API_KEY"), OSRMBaseURL: os.Getenv("OSRM_BASE_URL"),
+		OpenFreeMapStyleURL: os.Getenv("OPENFREEMAP_STYLE_URL"), CookieSecure: os.Getenv("COOKIE_SECURE") == "true",
 		GoogleClientID: os.Getenv("GOOGLE_CLIENT_ID"), GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		FrontendURL: os.Getenv("FRONTEND_URL"), Port: os.Getenv("PORT"),
 	}

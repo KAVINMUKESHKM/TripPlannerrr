@@ -8,11 +8,17 @@ import (
 	"time"
 )
 
-type Dependencies struct{ Ready func(context.Context) error }
+type Dependencies struct {
+	Ready func(context.Context) error
+	Auth  http.Handler
+}
 
 func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/healthz", health)
+	if deps.Auth != nil {
+		mux.Handle("/api/v1/auth/", deps.Auth)
+	}
 	mux.HandleFunc("GET /api/v1/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if deps.Ready != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)

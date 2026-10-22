@@ -23,6 +23,9 @@ func run(ctx context.Context, args []string) error {
 	if len(args) != 1 || args[0] != "up" {
 		return errors.New("usage: go run ./cmd/migrate up")
 	}
+	if err := config.LoadDotEnv(".env"); err != nil {
+		return errors.New("could not load backend .env")
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
