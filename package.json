@@ -1,4 +1,14 @@
 {
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "dev:backend": "go run ./backend/cmd/api",
+    "test:backend": "go test ./...",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
+    "backend:run": "go run ./backend/cmd/api",
+    "backend:test": "go test ./backend/..."
+  },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
     "leaflet": "^1.9.4",
