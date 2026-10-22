@@ -2,12 +2,12 @@
   "scripts": {
     "dev:frontend": "npm --prefix frontend run dev",
     "build:frontend": "npm --prefix frontend run build",
-    "dev:backend": "go run ./backend/cmd/api",
-    "test:backend": "go test ./...",
+    "dev:backend": "go -C backend run ./cmd/api",
+    "test:backend": "go -C backend test ./...",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",
-    "backend:run": "go run ./backend/cmd/api",
-    "backend:test": "go test ./backend/..."
+    "backend:run": "go -C backend run ./cmd/api",
+    "backend:test": "go -C backend test ./..."
   },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",

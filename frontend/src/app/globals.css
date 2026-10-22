@@ -1,5 +1,5 @@
-:root { --paper: #f7f4ed; --evergreen: #173c35; --mineral: #35687a; --citrus: #e2a83f; }
+:root { --paper: #f7f4ed; --evergreen: #173c35; --mineral: #35687a; --citrus: #e2a83f; --font-interface: Arial, sans-serif; }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--paper); color: var(--evergreen); font-family: Arial, sans-serif; }
+body { margin: 0; background: var(--paper); color: var(--evergreen); font-family: var(--font-interface); }
 main { max-width: 72rem; margin: auto; padding: 4rem 1.5rem; }
 @media (max-width: 600px) { main { padding: 2rem 1rem; } }

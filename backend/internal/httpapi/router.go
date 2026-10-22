@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -37,5 +38,42 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func withTimeout(next http.Handler) http.Handler {
-	return http.TimeoutHandler(next, 10*time.Second, `{"error":"request timeout"}`)
+	return timeoutHandler(next, 10*time.Second)
+}
+
+func timeoutHandler(next http.Handler, timeout time.Duration) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		result := make(chan struct{})
+		buffer := &bufferResponseWriter{header: make(http.Header)}
+		go func() { next.ServeHTTP(buffer, r); close(result) }()
+		select {
+		case <-result:
+			for key, values := range buffer.header {
+				w.Header()[key] = values
+			}
+			w.WriteHeader(buffer.status)
+			_, _ = w.Write(buffer.body.Bytes())
+		case <-time.After(timeout):
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "request timeout"})
+		}
+	})
+}
+
+type bufferResponseWriter struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+func (w *bufferResponseWriter) Header() http.Header { return w.header }
+func (w *bufferResponseWriter) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+func (w *bufferResponseWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(body)
 }
