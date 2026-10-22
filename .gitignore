@@ -6,4 +6,5 @@ server/.env
 !.env.example
 frontend/.next/
 frontend/node_modules/
+frontend/*.tsbuildinfo
 backend/bin/

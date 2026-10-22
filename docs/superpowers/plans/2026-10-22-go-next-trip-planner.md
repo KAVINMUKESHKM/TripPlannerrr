@@ -136,7 +136,7 @@
 
 **Files:**
 - Create: `frontend/public/assets/` by carrying forward useful image and SVG assets from `Client/src/assets/` before deleting `Client/`
-- Create: `frontend/src/lib/api.ts`, `frontend/src/lib/types.ts`, `frontend/src/lib/auth.ts`, `frontend/src/components/site-header.tsx`, `frontend/src/components/trip-search-form.tsx`, `frontend/src/app/login/page.tsx`, `frontend/src/app/signup/page.tsx`, `frontend/src/app/auth/callback/page.tsx`
+- Create: `frontend/src/lib/api.ts`, `frontend/src/lib/types.ts`, `frontend/src/lib/auth.ts`, `frontend/src/components/site-header.tsx`, `frontend/src/components/trip-search-form.tsx`, `frontend/src/components/auth-form.tsx`, `frontend/src/app/login/page.tsx`, `frontend/src/app/signup/page.tsx`, `frontend/src/app/auth/callback/page.tsx`
 - Modify: `frontend/src/app/page.tsx`, `frontend/src/app/layout.tsx`, `frontend/src/app/globals.css`, `frontend/package.json`
 - Delete after replacement: `Client/`, root legacy `package.json`/`package-lock.json`, `Server/`
 
@@ -153,7 +153,7 @@
 ### Task 8: Build attraction selection, itinerary editing, and MapLibre views
 
 **Files:**
-- Create: `frontend/src/app/plan/page.tsx`, `frontend/src/app/trips/page.tsx`, `frontend/src/app/trips/[id]/page.tsx`, `frontend/src/components/attraction-list.tsx`, `frontend/src/components/itinerary-editor.tsx`, `frontend/src/components/google-map.tsx`, `frontend/src/components/route-summary.tsx`
+- Create: `frontend/src/app/plan/page.tsx`, `frontend/src/app/trips/page.tsx`, `frontend/src/app/trips/[id]/page.tsx`, `frontend/src/components/planner-client.tsx`, `frontend/src/components/attraction-list.tsx`, `frontend/src/components/itinerary-editor.tsx`, `frontend/src/components/maplibre-map.tsx`, `frontend/src/components/route-summary.tsx`
 - Modify: `frontend/src/lib/api.ts`, `frontend/src/lib/types.ts`, `frontend/src/app/globals.css`
 - Remove Leaflet packages and styles from frontend dependencies.
 
