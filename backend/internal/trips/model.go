@@ -20,16 +20,16 @@ type Trip struct {
 }
 
 type TripInput struct {
-	Destination   string
-	DestinationID int64
-	StartDate     time.Time
-	DayCount      int
-	Days          []DayInput
+	Destination   string     `json:"destination"`
+	DestinationID int64      `json:"destinationId"`
+	StartDate     time.Time  `json:"startDate"`
+	DayCount      int        `json:"dayCount"`
+	Days          []DayInput `json:"days"`
 }
 
 type DayInput struct {
-	DayNumber     int
-	AttractionIDs []int64
+	DayNumber     int     `json:"dayNumber"`
+	AttractionIDs []int64 `json:"attractionIds"`
 }
 
 type Day struct {

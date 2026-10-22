@@ -9,8 +9,10 @@ import (
 )
 
 type Dependencies struct {
-	Ready func(context.Context) error
-	Auth  http.Handler
+	Ready  func(context.Context) error
+	Auth   http.Handler
+	Places http.Handler
+	Trips  http.Handler
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -18,6 +20,15 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/v1/healthz", health)
 	if deps.Auth != nil {
 		mux.Handle("/api/v1/auth/", deps.Auth)
+	}
+	if deps.Places != nil {
+		mux.Handle("/api/v1/attractions", deps.Places)
+		mux.Handle("/api/v1/attractions/", deps.Places)
+		mux.Handle("/api/v1/routes", deps.Places)
+	}
+	if deps.Trips != nil {
+		mux.Handle("/api/v1/trips", deps.Trips)
+		mux.Handle("/api/v1/trips/", deps.Trips)
 	}
 	mux.HandleFunc("GET /api/v1/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if deps.Ready != nil {

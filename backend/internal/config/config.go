@@ -14,6 +14,7 @@ type Config struct {
 	CookieSecure        bool
 	GoogleClientID      string
 	GoogleClientSecret  string
+	GoogleRedirectURL   string
 	FrontendURL         string
 	Port                string
 }
@@ -24,7 +25,8 @@ func Load() (Config, error) {
 		OpenCageAPIKey: os.Getenv("OPENCAGE_API_KEY"), OSRMBaseURL: os.Getenv("OSRM_BASE_URL"),
 		OpenFreeMapStyleURL: os.Getenv("OPENFREEMAP_STYLE_URL"), CookieSecure: os.Getenv("COOKIE_SECURE") == "true",
 		GoogleClientID: os.Getenv("GOOGLE_CLIENT_ID"), GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
-		FrontendURL: os.Getenv("FRONTEND_URL"), Port: os.Getenv("PORT"),
+		GoogleRedirectURL: os.Getenv("GOOGLE_REDIRECT_URL"),
+		FrontendURL:       os.Getenv("FRONTEND_URL"), Port: os.Getenv("PORT"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")

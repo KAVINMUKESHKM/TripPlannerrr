@@ -11,16 +11,23 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/oauth2"
 )
 
 type Options struct {
-	CookieSecure  bool
-	AllowedOrigin string
+	CookieSecure   bool
+	AllowedOrigin  string
+	GoogleOAuth    *oauth2.Config
+	GoogleVerifier IdentityVerifier
+	FrontendURL    string
 }
 type Handler struct {
-	pool          *pgxpool.Pool
-	cookieSecure  bool
-	allowedOrigin string
+	pool           *pgxpool.Pool
+	cookieSecure   bool
+	allowedOrigin  string
+	googleOAuth    *oauth2.Config
+	googleVerifier IdentityVerifier
+	frontendURL    string
 }
 type credentials struct {
 	Email    string `json:"email"`
@@ -29,7 +36,7 @@ type credentials struct {
 }
 
 func NewHandler(pool *pgxpool.Pool, options Options) *Handler {
-	return &Handler{pool: pool, cookieSecure: options.CookieSecure, allowedOrigin: strings.TrimRight(options.AllowedOrigin, "/")}
+	return &Handler{pool: pool, cookieSecure: options.CookieSecure, allowedOrigin: strings.TrimRight(options.AllowedOrigin, "/"), googleOAuth: options.GoogleOAuth, googleVerifier: options.GoogleVerifier, frontendURL: strings.TrimRight(options.FrontendURL, "/")}
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -38,6 +45,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", h.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", h.logout)
 	mux.Handle("GET /api/v1/auth/me", h.RequireAuth(http.HandlerFunc(h.me)))
+	mux.HandleFunc("GET /api/v1/auth/google", h.googleStart)
+	mux.HandleFunc("GET /api/v1/auth/google/callback", h.googleCallback)
 	return mux
 }
 
@@ -123,6 +132,11 @@ func (h *Handler) checkOrigin(w http.ResponseWriter, r *http.Request) bool {
 	}
 	writeError(w, http.StatusForbidden, "request origin is not allowed")
 	return false
+}
+
+// CheckRequestOrigin enforces the configured origin for authenticated cookie mutations.
+func (h *Handler) CheckRequestOrigin(w http.ResponseWriter, r *http.Request) bool {
+	return h.checkOrigin(w, r)
 }
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
