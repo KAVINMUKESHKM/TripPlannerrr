@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,6 +48,7 @@ func (h *Handler) restaurants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		log.Printf("places restaurants: attraction lookup failed: %v", err)
 		writeError(w, 500, "could not load attraction")
 		return
 	}
@@ -56,6 +58,7 @@ func (h *Handler) restaurants(w http.ResponseWriter, r *http.Request) {
 	}
 	results, err := h.Restaurants.Nearby(r.Context(), providers.Coordinate{Latitude: place.Latitude, Longitude: place.Longitude})
 	if err != nil {
+		log.Printf("places restaurants: provider request failed: %v", err)
 		status := 502
 		if strings.Contains(err.Error(), "not configured") {
 			status = 503
@@ -73,6 +76,7 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.SearchService.Search(r.Context(), q)
 	if err != nil {
+		log.Printf("places search: request failed: %v", err)
 		status := http.StatusBadGateway
 		if strings.Contains(err.Error(), "not configured") {
 			status = http.StatusServiceUnavailable
@@ -94,6 +98,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		log.Printf("places get: attraction lookup failed: %v", err)
 		writeError(w, 500, "could not load attraction")
 		return
 	}

@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -73,6 +74,7 @@ func (h *Handler) googleStart(w http.ResponseWriter, r *http.Request) {
 	hash := sha256.Sum256([]byte(state))
 	_, _ = h.pool.Exec(r.Context(), "DELETE FROM oauth_states WHERE expires_at <= now()")
 	if _, err := h.pool.Exec(r.Context(), "INSERT INTO oauth_states(state_hash,expires_at) VALUES($1,$2)", hash[:], time.Now().Add(oauthStateLifetime)); err != nil {
+		log.Printf("google oauth: could not store login state: %v", err)
 		writeError(w, http.StatusServiceUnavailable, "Google sign-in is temporarily unavailable")
 		return
 	}
@@ -106,6 +108,7 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	token, err := h.googleOAuth.Exchange(ctx, code)
 	if err != nil {
+		log.Printf("google oauth: code exchange failed: %v", err)
 		writeError(w, http.StatusBadGateway, "Google sign-in could not be completed")
 		return
 	}
@@ -116,6 +119,7 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	identity, err := h.googleVerifier.Verify(ctx, rawIDToken, h.googleOAuth.ClientID)
 	if err != nil {
+		log.Printf("google oauth: identity verification failed: %v", err)
 		writeError(w, http.StatusUnauthorized, "Google identity could not be verified")
 		return
 	}
@@ -125,10 +129,12 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := h.resolveGoogleUser(ctx, identity)
 	if err != nil {
+		log.Printf("google oauth: could not resolve account: %v", err)
 		writeError(w, http.StatusConflict, "Google account could not be linked to a user")
 		return
 	}
 	if err := h.issueSession(w, r, user); err != nil {
+		log.Printf("google oauth: could not create session: %v", err)
 		writeError(w, http.StatusInternalServerError, "could not create session")
 		return
 	}

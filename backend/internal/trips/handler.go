@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -36,6 +37,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.UserFromContext(r.Context())
 	trips, err := h.repository.ListTrips(r.Context(), user.ID)
 	if err != nil {
+		log.Printf("trips list: database query failed: %v", err)
 		writeTripError(w, 500, "could not list trips")
 		return
 	}
@@ -69,6 +71,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		log.Printf("trips get: database query failed: %v", err)
 		writeTripError(w, 500, "could not load trip")
 		return
 	}
@@ -111,6 +114,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, ErrNotFound) {
 			writeTripError(w, 404, "trip not found")
 		} else {
+			log.Printf("trips delete: database delete failed: %v", err)
 			writeTripError(w, 500, "could not delete trip")
 		}
 		return

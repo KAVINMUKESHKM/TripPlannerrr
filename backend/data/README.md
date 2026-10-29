@@ -4,7 +4,7 @@
 
 Each record retains its OpenStreetMap element URL. The data is available under the Open Database License (ODbL); see <https://www.openstreetmap.org/copyright>. The application displays OpenStreetMap attribution alongside imported place results.
 
-The enrichment command fetches OSM tags such as opening hours, address, wheelchair access, contact details, fees, toilets, internet access, Wikipedia, and Wikidata. Coverage is incomplete because these details are only available when mapped by contributors. A missing field means the source has no mapped value; it does not confirm that a venue lacks the facility. Re-run enrichment and import to refresh the details:
+The enrichment command fetches OSM tags such as opening hours, address, wheelchair access, contact details, fees, toilets, internet access, Wikipedia, and Wikidata. For places linked to Wikidata it also fills a missing short English description and official website when available. Coverage is incomplete because details are only available when mapped by contributors. A missing field means the sources have no mapped value; it does not confirm that a venue lacks the facility. Re-run enrichment and import to refresh the details:
 
 From the `backend` directory, apply migrations and import or refresh the records with:
 
@@ -13,5 +13,7 @@ go run ./cmd/enrichosm
 go run ./cmd/migrate up
 go run ./cmd/importosm
 ```
+
+If Overpass is unavailable, `go run ./cmd/enrichosm --wikidata-only` refreshes descriptions and official websites for records already linked to Wikidata.
 
 Set `OVERPASS_URL` to use another compatible Overpass instance; see <https://wiki.openstreetmap.org/wiki/Overpass_API> for public instance information.

@@ -24,7 +24,7 @@ Copy `.env.example` to `.env` only if `.env` does not already exist. Set `DATABA
 | `SERP_API_KEY` (`SERP_KEY` also accepted) | No | Find nearby restaurants from attraction cards |
 | `GOOGLE_CLIENT_ID` | No | Enables Google OAuth when paired with the secret |
 | `GOOGLE_CLIENT_SECRET` | No | Enables Google OAuth when paired with the client ID |
-| `GOOGLE_REDIRECT_URL` | No | OAuth callback, normally `http://localhost:8080/api/v1/auth/google/callback` |
+| `GOOGLE_REDIRECT_URL` | No | OAuth callback; defaults to `${FRONTEND_URL}/api/v1/auth/google/callback` |
 | `COOKIE_SECURE` | No | Set `true` for HTTPS deployments; use `false` locally |
 | `APP_ENV` | No | Set `production` in deployment; requires secure cookies and a TLS-only PostgreSQL URL |
 | `TRUSTED_PROXIES` | No | Comma-separated trusted proxy CIDRs; only these peers may supply client IPs through `X-Forwarded-For` |
@@ -38,13 +38,16 @@ From `backend/`:
 
 ```bash
 go run ./cmd/migrate up
-go run ./cmd/enrichosm                 # fetch current visitor details from OSM/Overpass
+go run ./cmd/enrichosm                 # fetch current visitor details from OSM/Overpass and Wikidata
+go run ./cmd/enrichosm --wikidata-only # refresh descriptions and websites without Overpass
 go run ./cmd/importosm                 # optional: import bundled Tamil Nadu data
 go run ./cmd/importosm data/places.json # optional: import another compatible dataset
 go run ./cmd/api
 ```
 
 The migration command applies unapplied SQL migrations in filename order. The API does not run migrations automatically. `enrichosm` fetches one batch of current OpenStreetMap tags for the bundled records and updates the JSON dataset; `importosm` then upserts those details into PostgreSQL. Both commands can be rerun. Detail coverage depends on what OpenStreetMap contributors have mapped; empty fields mean no value was available, not that a venue has no hours or accessibility features.
+
+At startup the API logs database readiness, its listen address, and (when OAuth is enabled) the exact Google callback URI. Each request is logged with its method, path, status, and duration; query strings and credentials are omitted. Check the callback log against the authorized redirect URI in Google Cloud if Google reports `redirect_uri_mismatch`.
 
 ## API routes
 
@@ -70,7 +73,7 @@ All routes use the `/api/v1` prefix.
 | `GET`, `POST` | `/trips` | List or create the signed-in user's trips |
 | `GET`, `PUT`, `DELETE` | `/trips/{id}` | Read, update, or delete an owned trip |
 
-Sessions use HttpOnly cookies. Trip routes require a signed-in user. For local Google sign-in, register the callback URL above in Google Cloud and set matching OAuth variables.
+Sessions use HttpOnly cookies. Trip routes require a signed-in user. For local Google sign-in, register `http://localhost:3000/api/v1/auth/google/callback` as an authorized redirect URI in Google Cloud. The frontend proxies this callback to the API. The API logs the exact callback URI at startup; if you set `GOOGLE_REDIRECT_URL`, register that exact value instead. Add your production HTTPS callback separately for deployment.
 
 For production, serve the frontend over HTTPS, set `APP_ENV=production` and `COOKIE_SECURE=true`, use PostgreSQL connection strings with TLS enabled (for example `sslmode=require`), and give the API database user only the permissions it needs. Rate windows are stored in PostgreSQL and shared by all instances. If the API is behind a proxy, set `TRUSTED_PROXIES` to that proxy's exact CIDR so limits use the real client IP; the API ignores forwarded-IP headers from untrusted peers.
 

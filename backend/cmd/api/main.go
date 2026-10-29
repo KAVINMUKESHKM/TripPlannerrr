@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,25 +19,33 @@ import (
 
 func main() {
 	if err := config.LoadDotEnv(".env"); err != nil {
-		log.Fatal("could not load backend .env")
+		log.Fatalf("could not load backend .env: %v", err)
 	}
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("invalid backend configuration: %v", err)
 	}
 	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
-		log.Fatal("configure database connection")
+		log.Fatalf("could not configure database connection (check DATABASE_URL): %v", err)
 	}
 	defer pool.Close()
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := pool.Ping(dbCtx); err != nil {
+		dbCancel()
+		log.Fatalf("database connection failed (check DATABASE_URL and run migrations): %v", err)
+	}
+	dbCancel()
+	log.Printf("database connection ready")
 	go cleanupExpiredSecurityRecords(pool)
 	var googleOAuth *oauth2.Config
 	var googleVerifier auth.IdentityVerifier
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
 		redirectURL := cfg.GoogleRedirectURL
 		if redirectURL == "" {
-			redirectURL = fmt.Sprintf("http://localhost:%s/api/v1/auth/google/callback", cfg.Port)
+			redirectURL = strings.TrimRight(cfg.FrontendURL, "/") + "/api/v1/auth/google/callback"
 		}
+		log.Printf("Google OAuth callback URI: %s", redirectURL)
 		googleOAuth = &oauth2.Config{ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret, RedirectURL: redirectURL, Endpoint: oauth2.Endpoint{AuthURL: "https://accounts.google.com/o/oauth2/v2/auth", TokenURL: "https://oauth2.googleapis.com/token"}, Scopes: []string{"openid", "email", "profile"}}
 		googleVerifier = auth.NewGoogleOIDCVerifier()
 	}
@@ -49,7 +57,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("API listening on :%s", cfg.Port)
+	log.Printf("API starting: address=:%s environment=%s frontend=%s", cfg.Port, valueOr(cfg.Environment, "development"), valueOr(cfg.FrontendURL, "not configured"))
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           httpapi.NewRouter(httpapi.Dependencies{Ready: pool.Ping, Limiter: rateLimiter, Auth: authHandler.Routes(), Places: placeHandler.Routes(), Trips: tripHandler.Routes()}),
@@ -62,6 +70,13 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+func valueOr(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func cleanupExpiredSecurityRecords(pool *pgxpool.Pool) {

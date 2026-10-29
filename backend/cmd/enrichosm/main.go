@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -51,6 +53,23 @@ type overpassResponse struct {
 	} `json:"elements"`
 }
 
+type wikidataEntity struct {
+	Descriptions map[string]struct {
+		Value string `json:"value"`
+	} `json:"descriptions"`
+	Claims map[string][]struct {
+		Mainsnak struct {
+			Datavalue struct {
+				Value json.RawMessage `json:"value"`
+			} `json:"datavalue"`
+		} `json:"mainsnak"`
+	} `json:"claims"`
+}
+
+type wikidataResponse struct {
+	Entities map[string]wikidataEntity `json:"entities"`
+}
+
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -59,8 +78,12 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
+	wikidataOnly := len(args) > 0 && args[0] == "--wikidata-only"
+	if wikidataOnly {
+		args = args[1:]
+	}
 	if len(args) > 1 {
-		return errors.New("usage: go run ./cmd/enrichosm [data-file]")
+		return errors.New("usage: go run ./cmd/enrichosm [--wikidata-only] [data-file]")
 	}
 	path := defaultDataset
 	if len(args) == 1 {
@@ -77,7 +100,10 @@ func run(ctx context.Context, args []string) error {
 	if len(places) == 0 {
 		return errors.New("attraction dataset is empty")
 	}
-	query, sourceIDs, err := overpassQuery(places)
+	if wikidataOnly {
+		return enrichWikidataOnly(ctx, path, places)
+	}
+	query, _, err := overpassQuery(places)
 	if err != nil {
 		return err
 	}
@@ -142,6 +168,68 @@ func run(ctx context.Context, args []string) error {
 		places[i].DetailsUpdatedAt = &updatedAt
 		enriched++
 	}
+	wikidataDetails, err := fetchWikidataDetails(requestCtx, client, places)
+	if err != nil {
+		log.Printf("Wikidata enrichment unavailable; keeping OpenStreetMap details: %v", err)
+	}
+	for i := range places {
+		details, ok := wikidataDetails[places[i].Wikidata]
+		if !ok {
+			continue
+		}
+		if places[i].Description == "" {
+			places[i].Description = details.Description
+		}
+		if places[i].Website == "" {
+			places[i].Website = details.Website
+		}
+	}
+	if err := writeDataset(path, places); err != nil {
+		return err
+	}
+	withDescription := 0
+	for _, place := range places {
+		if place.Description != "" {
+			withDescription++
+		}
+	}
+	fmt.Printf("Updated %d OSM place records; added Wikidata details where linked (%d of %d now have descriptions; Overpass timestamp %s).\n", enriched, withDescription, len(places), updatedAt.Format(time.RFC3339))
+	return nil
+}
+
+func enrichWikidataOnly(ctx context.Context, path string, places []attraction) error {
+	requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	details, err := fetchWikidataDetails(requestCtx, &http.Client{Timeout: 25 * time.Second}, places)
+	if err != nil {
+		return err
+	}
+	withDescription, withWebsite := 0, 0
+	for i := range places {
+		item, ok := details[places[i].Wikidata]
+		if ok {
+			if places[i].Description == "" {
+				places[i].Description = item.Description
+			}
+			if places[i].Website == "" {
+				places[i].Website = item.Website
+			}
+		}
+		if places[i].Description != "" {
+			withDescription++
+		}
+		if places[i].Website != "" {
+			withWebsite++
+		}
+	}
+	if err := writeDataset(path, places); err != nil {
+		return err
+	}
+	fmt.Printf("Added Wikidata descriptions and websites where available (%d places have descriptions; %d have websites).\n", withDescription, withWebsite)
+	return nil
+}
+
+func writeDataset(path string, places []attraction) error {
 	output, err := json.MarshalIndent(places, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode enriched dataset: %w", err)
@@ -150,8 +238,69 @@ func run(ctx context.Context, args []string) error {
 	if err := replaceFile(path, output); err != nil {
 		return fmt.Errorf("write enriched dataset: %w", err)
 	}
-	fmt.Printf("Added OSM details to %d of %d places (Overpass returned %d of %d IDs; data timestamp %s).\n", enriched, len(places), len(tagsByID), len(sourceIDs), updatedAt.Format(time.RFC3339))
 	return nil
+}
+
+type placeDetails struct {
+	Description string
+	Website     string
+}
+
+func fetchWikidataDetails(ctx context.Context, client *http.Client, places []attraction) (map[string]placeDetails, error) {
+	unique := make(map[string]struct{})
+	for _, place := range places {
+		if len(place.Wikidata) > 1 && place.Wikidata[0] == 'Q' {
+			if _, err := strconv.ParseInt(place.Wikidata[1:], 10, 64); err == nil {
+				unique[place.Wikidata] = struct{}{}
+			}
+		}
+	}
+	ids := make([]string, 0, len(unique))
+	for id := range unique {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	results := make(map[string]placeDetails, len(ids))
+	for start := 0; start < len(ids); start += 50 {
+		end := min(start+50, len(ids))
+		query := url.Values{
+			"action":    {"wbgetentities"},
+			"ids":       {strings.Join(ids[start:end], "|")},
+			"props":     {"descriptions|claims"},
+			"languages": {"en"},
+			"format":    {"json"},
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.wikidata.org/w/api.php?"+query.Encode(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("create Wikidata request: %w", err)
+		}
+		req.Header.Set("User-Agent", "TripPlanner place-details importer (OpenStreetMap/Wikidata enrichment)")
+		response, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("request Wikidata details: %w", err)
+		}
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+		_ = response.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read Wikidata response: %w", readErr)
+		}
+		if response.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("Wikidata returned HTTP %d", response.StatusCode)
+		}
+		var payload wikidataResponse
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return nil, fmt.Errorf("decode Wikidata response: %w", err)
+		}
+		for id, entity := range payload.Entities {
+			details := placeDetails{Description: entity.Descriptions["en"].Value}
+			if claims := entity.Claims["P856"]; len(claims) > 0 {
+				_ = json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &details.Website)
+				details.Website = strings.TrimSpace(details.Website)
+			}
+			results[id] = details
+		}
+	}
+	return results, nil
 }
 
 func overpassQuery(places []attraction) (string, map[string]struct{}, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -52,10 +53,44 @@ func NewRouter(deps Dependencies) http.Handler {
 		}
 		health(w, r)
 	})
-	if deps.Limiter == nil {
-		return withTimeout(securityHeaders(mux))
+	var handler http.Handler = withTimeout(securityHeaders(mux))
+	if deps.Limiter != nil {
+		handler = withTimeout(securityHeaders(rateLimitMiddleware(deps.Limiter, mux)))
 	}
-	return withTimeout(securityHeaders(rateLimitMiddleware(deps.Limiter, mux)))
+	return requestLogger(handler)
+}
+
+type responseRecorder struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+}
+
+func (r *responseRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
+func (r *responseRecorder) WriteHeader(status int) {
+	if r.wroteHeader {
+		return
+	}
+	r.status = status
+	r.wroteHeader = true
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *responseRecorder) Write(body []byte) (int, error) {
+	if !r.wroteHeader {
+		r.WriteHeader(http.StatusOK)
+	}
+	return r.ResponseWriter.Write(body)
+}
+
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		recorder := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		log.Printf("http request method=%s path=%q status=%d duration=%s", r.Method, r.URL.Path, recorder.status, time.Since(started).Round(time.Millisecond))
+	})
 }
 
 func securityHeaders(next http.Handler) http.Handler {

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/mail"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
@@ -83,9 +85,11 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "could not create account")
+		log.Printf("auth register: database insert failed: %v", err)
 		return
 	}
 	if err := h.issueSession(w, r, user); err != nil {
+		log.Printf("auth register: session creation failed: %v", err)
 		writeError(w, http.StatusInternalServerError, "could not create session")
 		return
 	}
@@ -103,11 +107,17 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	var user User
 	var hash string
 	err := h.pool.QueryRow(r.Context(), `SELECT id,COALESCE(username,''),email,COALESCE(full_name,''),password FROM users WHERE lower(email)=lower($1)`, strings.TrimSpace(input.Email)).Scan(&user.ID, &user.Username, &user.Email, &user.FullName, &hash)
-	if err != nil || !VerifyPassword(hash, input.Password) {
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !VerifyPassword(hash, input.Password)) {
 		writeError(w, http.StatusUnauthorized, ErrInvalidCredentials.Error())
 		return
 	}
+	if err != nil {
+		log.Printf("auth login: database lookup failed: %v", err)
+		writeError(w, http.StatusServiceUnavailable, "sign-in is temporarily unavailable")
+		return
+	}
 	if err := h.issueSession(w, r, user); err != nil {
+		log.Printf("auth login: session creation failed: %v", err)
 		writeError(w, http.StatusInternalServerError, "could not create session")
 		return
 	}
@@ -120,7 +130,9 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		hash := sha256Bytes(cookie.Value)
-		_, _ = h.pool.Exec(r.Context(), "DELETE FROM sessions WHERE token_hash=$1", hash[:])
+		if _, err := h.pool.Exec(r.Context(), "DELETE FROM sessions WHERE token_hash=$1", hash[:]); err != nil {
+			log.Printf("auth logout: session revoke failed: %v", err)
+		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: h.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	w.WriteHeader(http.StatusNoContent)
@@ -132,6 +144,7 @@ func (h *Handler) logoutAll(w http.ResponseWriter, r *http.Request) {
 	}
 	user, _ := UserFromContext(r.Context())
 	if _, err := h.pool.Exec(r.Context(), "DELETE FROM sessions WHERE user_id=$1", user.ID); err != nil {
+		log.Printf("auth logout-all: session revoke failed: %v", err)
 		writeError(w, http.StatusInternalServerError, "could not revoke sessions")
 		return
 	}
