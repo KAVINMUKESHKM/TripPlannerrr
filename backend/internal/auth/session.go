@@ -27,7 +27,7 @@ func UserFromContext(ctx context.Context) (User, bool) {
 	return user, ok
 }
 
-func (h *Handler) issueSession(w http.ResponseWriter, user User) error {
+func (h *Handler) issueSession(w http.ResponseWriter, r *http.Request, user User) error {
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return err
@@ -35,7 +35,7 @@ func (h *Handler) issueSession(w http.ResponseWriter, user User) error {
 	token := base64.RawURLEncoding.EncodeToString(secret)
 	hash := sha256.Sum256([]byte(token))
 	expires := time.Now().Add(sessionLifetime)
-	if _, err := h.pool.Exec(context.Background(), "INSERT INTO sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)", hash[:], user.ID, expires); err != nil {
+	if _, err := h.pool.Exec(r.Context(), "INSERT INTO sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)", hash[:], user.ID, expires); err != nil {
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: token, Path: "/", HttpOnly: true, Secure: h.cookieSecure, SameSite: http.SameSiteLaxMode, Expires: expires, MaxAge: int(sessionLifetime.Seconds())})

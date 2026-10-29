@@ -1,107 +1,58 @@
-
 # Trip Planner
 
-## Table of Contents
-- [Project Overview](#project-overview)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Installation](#installation)
-- [Usage](#usage)
-- [API Endpoints](#api-endpoints)
-- [Environment Variables](#environment-variables)
-- [Client URL](#client-url)
-- [Future Improvements](#future-improvements)
-- [Contributing](#contributing)
-- [License](#license)
+Trip Planner helps people find attractions, arrange day-by-day itineraries, see their route on a map, and save trips to an account. The current application uses a Go API and a Next.js frontend.
 
-## Project Overview
-Trip Planner is a travel planning application that allows users to find attractions and nearby restaurants based on their travel preferences. The application uses real-time data to enhance the user experience, providing suggestions tailored to the user's chosen destinations and travel dates.
+## Current applications
 
-## Features
-- User authentication with JWT tokens for secure access.
-- Weather-based attraction suggestions using OpenWeather API.
-- Nearby restaurant recommendations for each attraction utilizing SERP API.
-- Geolocation services with OpenCage API.
-- Easy-to-use interface for selecting attractions and planning trips.
+- [Backend guide](backend/README.md) — Go API, database setup, migrations, imported place data, and API routes.
+- [Frontend guide](frontend/README.md) — Next.js setup, pages, environment variables, and UI behavior.
 
-## Tech Stack
-- **Frontend:** React.js
-- **Backend:** Node.js, Express
-- **Database:** PostgreSQL
-- **APIs Used:** 
-  - OpenCage for geolocation
-  - OpenWeather for weather data
-  - SERP API for restaurant suggestions
+The former `Client/` and `Server/` applications have been retired. Their active features are carried by the Go and Next.js applications:
 
-## Installation
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/trip-planner.git
-   ```
-2. Navigate to the backend directory:
-   ```bash
-   cd trip-planner/backend
-   ```
-3. Install the dependencies:
-   ```bash
-   npm install
-   ```
-4. Set up your environment variables in a `.env` file (refer to `.env.example` for the structure).
-5. Start the server:
-   ```bash
-   npm start
-   ```
+| Previous app | Current app |
+| --- | --- |
+| React/Vite destination search and attraction list | Next.js home and trip planner |
+| Attraction details and nearby restaurant suggestions | Attraction cards with expandable nearby restaurant results |
+| Leaflet shortest-path map | MapLibre map with OSRM route line, distance, and duration |
+| Register, login, logout | Go session auth, plus Google OAuth |
+| Weather-matched attraction suggestions | Ideal-weather preferences filter suggestions when forecast data is available; forecasts remain visible by itinerary day |
+| — | Saved trips with create, edit, and delete |
 
-## Usage
-- Register a new user by navigating to the registration endpoint.
-- Log in to access personalized travel planning features.
-- Input your travel destination and dates to receive suggestions for attractions and nearby restaurants.
+## Run locally
 
-## API Endpoints
-- **POST** `/register` - Register a new user.
-- **POST** `/login` - Log in an existing user.
-- **POST** `/logout` - Log out a user.
-- **GET** `/attractions` - Get suggested attractions based on user input.
+Use two terminals from the repository root.
 
+### 1. Backend
 
-## Environment Variables
-Ensure to create a `.env` file in the backend directory with the following variables:
+If `backend/.env` does not exist, copy `backend/.env.example` to `backend/.env` and set `DATABASE_URL`. The existing local `.env` is left untouched.
 
-```plaintext
-PORT=7000
-
-# OpenCage API Key
-OPENCAGE_API_KEY=your_opencage_api_key_here
-
-# PostgreSQL Credentials
-PS_HOST=your_postgresql_host_here
-PS_USER=your_postgresql_user_here
-PS_DB_NAME=your_postgresql_db_name_here
-PS_PASSWORD=your_postgresql_password_here
-PS_PORT=5432
-PS_CONNECTION_STRING=your_postgresql_connection_string_here
-
-# Weather API Key
-OPEN_WEATHER_KEY=your_open_weather_api_key_here
-
-# SERP API Key
-SERP_KEY=your_serp_api_key_here
-
-# JWT Secret
-JWT_SECRET=your_jwt_secret_here
+```bash
+cd backend
+go run ./cmd/migrate up
+go run ./cmd/importosm   # optional; loads the bundled Tamil Nadu attractions
+go run ./cmd/api
 ```
 
-## Client URL
-You can access the Trip Planner application at: [https://tripplannerrclient.onrender.com/](https://tripplannerrclient.onrender.com/)
+### 2. Frontend
 
-## Future Improvements
-- Enhance user interface for a better user experience.
-- Add more detailed user preferences for personalized suggestions.
-- Implement payment processing for booking attractions.
-- Include user-generated content, such as reviews and ratings.
+If `frontend/.env.local` does not exist, create it from `frontend/.env.example`. Then run:
 
-## Contributing
-Contributions are welcome! Please fork the repository and submit a pull request for any improvements or bug fixes.
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Open [http://localhost:3000](http://localhost:3000). The frontend proxies `/api/*` to `http://localhost:8080` by default.
+
+Root convenience commands are available as `npm run dev:backend`, `npm run dev:frontend`, `npm run build:frontend`, and `npm run test:backend`.
+
+## Optional providers
+
+The core app runs without weather, geocoding, Google OAuth, or restaurant credentials. OpenCage is needed for destinations that are not in the local database. OpenWeather adds daily forecasts. Google OAuth requires its client ID, secret, and registered callback. SerpAPI enables nearby restaurants. OpenFreeMap and OSRM provide map tiles and driving routes.
+
+Provider variables and callback setup are documented in the app-specific READMEs. Keep real `.env` files private; use the `.env.example` files as templates.
+
+## Place data
+
+The bundled Tamil Nadu attraction records come from OpenStreetMap and are imported by `backend/cmd/importosm`. See [the data notes](backend/data/README.md) for source and attribution details.

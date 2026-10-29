@@ -30,7 +30,12 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+
+	databaseURL := cfg.DatabaseURL
+	if cfg.MigratorDatabaseURL != "" {
+		databaseURL = cfg.MigratorDatabaseURL
+	}
+	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		return errors.New("database configuration is invalid")
 	}

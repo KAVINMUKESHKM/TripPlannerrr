@@ -53,6 +53,9 @@ func (s Service) Search(ctx context.Context, query SearchQuery) ([]SearchDay, er
 		return nil, err
 	}
 	forecasts, _ := s.Weather.Daily(ctx, point, query.Days) // Weather is optional; place discovery remains available during provider outages.
+	if len(forecasts) > 0 {
+		places = filterWeatherSuggestions(places, forecasts)
+	}
 	days := make([]SearchDay, query.Days)
 	for i := range days {
 		date := query.Date.AddDate(0, 0, i)
@@ -79,6 +82,36 @@ func (s Service) Search(ctx context.Context, query SearchQuery) ([]SearchDay, er
 		}
 	}
 	return days, nil
+}
+
+func filterWeatherSuggestions(places []Attraction, forecasts []providers.Forecast) []Attraction {
+	eligible := make(map[int64]bool, len(places))
+	for _, forecast := range forecasts {
+		condition := strings.ToLower(forecast.Condition)
+		if condition == "" {
+			continue
+		}
+		for _, place := range places {
+			if strings.EqualFold(place.Category, "waterfall") && (forecast.Hour < 10 || forecast.Hour > 16) {
+				continue
+			}
+			ideal := strings.ToLower(strings.TrimSpace(place.IdealWeather))
+			if ideal != "" && condition == "clouds" && !strings.Contains(ideal, "cloud") {
+				continue
+			}
+			if ideal != "" && condition == "rain" && !strings.Contains(ideal, "rain") {
+				continue
+			}
+			eligible[place.ID] = true
+		}
+	}
+	filtered := make([]Attraction, 0, len(eligible))
+	for _, place := range places {
+		if eligible[place.ID] {
+			filtered = append(filtered, place)
+		}
+	}
+	return filtered
 }
 
 func ParseSearchQuery(destination string, days, date, category string) (SearchQuery, error) {

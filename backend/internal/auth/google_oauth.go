@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 )
 
 const oauthStateLifetime = 15 * time.Minute
+const oauthStateCookieName = "trip_oauth_state"
 
 type GoogleIdentity struct {
 	Subject       string
@@ -69,10 +71,12 @@ func (h *Handler) googleStart(w http.ResponseWriter, r *http.Request) {
 	}
 	state := base64.RawURLEncoding.EncodeToString(stateBytes)
 	hash := sha256.Sum256([]byte(state))
+	_, _ = h.pool.Exec(r.Context(), "DELETE FROM oauth_states WHERE expires_at <= now()")
 	if _, err := h.pool.Exec(r.Context(), "INSERT INTO oauth_states(state_hash,expires_at) VALUES($1,$2)", hash[:], time.Now().Add(oauthStateLifetime)); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "Google sign-in is temporarily unavailable")
 		return
 	}
+	http.SetCookie(w, &http.Cookie{Name: oauthStateCookieName, Value: state, Path: "/api/v1/auth/google/callback", HttpOnly: true, Secure: h.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(oauthStateLifetime.Seconds())})
 	http.Redirect(w, r, h.googleOAuth.AuthCodeURL(state, oauth2.SetAuthURLParam("prompt", "select_account")), http.StatusFound)
 }
 
@@ -82,11 +86,14 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("error") != "" {
+		h.clearOAuthStateCookie(w)
 		http.Redirect(w, r, h.frontendURL+"/auth/callback?error=cancelled", http.StatusFound)
 		return
 	}
 	state := r.URL.Query().Get("state")
-	if state == "" || len(state) > 256 || !h.consumeOAuthState(r.Context(), state) {
+	cookie, cookieErr := r.Cookie(oauthStateCookieName)
+	h.clearOAuthStateCookie(w)
+	if cookieErr != nil || state == "" || len(state) > 256 || subtle.ConstantTimeCompare([]byte(state), []byte(cookie.Value)) != 1 || !h.consumeOAuthState(r.Context(), state) {
 		writeError(w, http.StatusBadRequest, "Google sign-in state is invalid or expired")
 		return
 	}
@@ -121,11 +128,15 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "Google account could not be linked to a user")
 		return
 	}
-	if err := h.issueSession(w, user); err != nil {
+	if err := h.issueSession(w, r, user); err != nil {
 		writeError(w, http.StatusInternalServerError, "could not create session")
 		return
 	}
 	http.Redirect(w, r, h.frontendURL+"/auth/callback", http.StatusFound)
+}
+
+func (h *Handler) clearOAuthStateCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: oauthStateCookieName, Value: "", Path: "/api/v1/auth/google/callback", HttpOnly: true, Secure: h.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 }
 
 func (h *Handler) consumeOAuthState(ctx context.Context, state string) bool {

@@ -1,0 +1,782 @@
+openapi: 3.0.3
+info:
+  title: Trip Planner API
+  version: 1.0.0
+  description: >-
+    API for account sessions, attraction discovery, routes, nearby restaurants,
+    and saved itineraries. Authenticated operations use the HttpOnly
+    trip_session cookie created by register or login.
+servers:
+  - url: /api/v1
+    description: This API server
+tags:
+  - name: Health
+  - name: Authentication
+  - name: Attractions
+  - name: Routes
+  - name: Trips
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Check API liveness
+      operationId: getHealth
+      responses:
+        '200':
+          description: API process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Check API and database readiness
+      operationId: getReadiness
+      responses:
+        '200':
+          description: API and database are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+        '503':
+          description: Database is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnavailableStatus'
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Create an account and start a session
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created; sets the trip_session cookie
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Email is already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Sign in and start a session
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Signed in; sets the trip_session cookie
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: End the current session
+      operationId: logout
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Session ended; expires the session cookie
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /auth/logout-all:
+    post:
+      tags: [Authentication]
+      summary: Revoke every session for the signed-in user
+      operationId: logoutAll
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: All sessions were revoked and the current cookie was cleared
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/password/forgot:
+    post:
+      tags: [Authentication]
+      summary: Request a password-reset email
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '202':
+          description: Reset instructions will be sent if the account exists
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /auth/password/reset:
+    post:
+      tags: [Authentication]
+      summary: Set a new password using a single-use reset token
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+      responses:
+        '204':
+          description: Password changed and all sessions were revoked
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get the current signed-in user
+      operationId: getCurrentUser
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/google:
+    get:
+      tags: [Authentication]
+      summary: Begin Google OAuth sign-in
+      operationId: startGoogleOAuth
+      description: Redirects to Google when OAuth credentials are configured.
+      responses:
+        '302':
+          description: Redirect to Google or back to the frontend when unavailable
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /auth/google/callback:
+    get:
+      tags: [Authentication]
+      summary: Complete Google OAuth sign-in
+      operationId: completeGoogleOAuth
+      description: OAuth callback used by Google; redirects to the frontend.
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to the frontend after OAuth
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+  /attractions:
+    get:
+      tags: [Attractions]
+      summary: Search attractions for an itinerary
+      operationId: searchAttractions
+      parameters:
+        - name: destination
+          in: query
+          required: true
+          schema:
+            type: string
+          example: Chennai
+        - name: days
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 14
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+          example: Culture
+      responses:
+        '200':
+          description: Attractions grouped by itinerary day
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SearchDay'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '502':
+          description: A configured external provider failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /attractions/{id}:
+    get:
+      tags: [Attractions]
+      summary: Get an attraction by ID
+      operationId: getAttraction
+      parameters:
+        - $ref: '#/components/parameters/AttractionId'
+      responses:
+        '200':
+          description: Attraction record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attraction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /attractions/{id}/restaurants:
+    get:
+      tags: [Attractions]
+      summary: Find nearby restaurants for an attraction
+      operationId: getNearbyRestaurants
+      parameters:
+        - $ref: '#/components/parameters/AttractionId'
+      responses:
+        '200':
+          description: Nearby restaurant results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Restaurant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          description: Restaurant provider request failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /routes:
+    post:
+      tags: [Routes]
+      summary: Calculate a driving route through ordered stops
+      operationId: getRoute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteRequest'
+      responses:
+        '200':
+          description: Route distance, duration, and GeoJSON line geometry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /trips:
+    get:
+      tags: [Trips]
+      summary: List the current user's saved trips
+      operationId: listTrips
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Saved trips
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trip'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Trips]
+      summary: Create a saved trip
+      operationId: createTrip
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TripInput'
+      responses:
+        '201':
+          description: Created trip
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /trips/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    get:
+      tags: [Trips]
+      summary: Get one saved trip
+      operationId: getTrip
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Saved trip
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Trips]
+      summary: Replace a saved trip itinerary
+      operationId: updateTrip
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TripInput'
+      responses:
+        '200':
+          description: Updated trip
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Trips]
+      summary: Delete a saved trip
+      operationId: deleteTrip
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Trip deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: trip_session
+  parameters:
+    AttractionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    TripId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+  headers:
+    SessionCookie:
+      description: HttpOnly session cookie, valid for 30 days
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Request is invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Request origin is not allowed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Authentication is required or credentials are invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource was not found for this user
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServiceUnavailable:
+      description: Optional external provider is not configured
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    UnavailableStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [unavailable]
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        full_name:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+    Attraction:
+      type: object
+      required: [id, name, latitude, longitude]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        best_climate:
+          type: string
+        ideal_weather:
+          type: string
+        ideal_temp_min:
+          type: number
+          format: double
+          nullable: true
+        ideal_temp_max:
+          type: number
+          format: double
+          nullable: true
+        source_url:
+          type: string
+          format: uri
+    SearchDay:
+      type: object
+      required: [day, date, attractions]
+      properties:
+        day:
+          type: integer
+          minimum: 1
+        date:
+          type: string
+          format: date
+        weather:
+          type: string
+        temperature:
+          type: number
+          format: double
+          nullable: true
+        attractions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attraction'
+    Restaurant:
+      type: object
+      required: [name, rating, latitude, longitude, distanceKm]
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+        rating:
+          type: number
+          format: double
+        phone:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        distanceKm:
+          type: number
+          format: double
+    Waypoint:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+    RouteRequest:
+      type: object
+      required: [waypoints]
+      properties:
+        waypoints:
+          type: array
+          minItems: 2
+          maxItems: 25
+          items:
+            $ref: '#/components/schemas/Waypoint'
+    RouteSummary:
+      type: object
+      required: [distanceMeters, durationSeconds, geometry]
+      properties:
+        distanceMeters:
+          type: number
+          format: double
+        durationSeconds:
+          type: number
+          format: double
+        geometry:
+          type: object
+          required: [type, coordinates]
+          properties:
+            type:
+              type: string
+              enum: [LineString]
+            coordinates:
+              type: array
+              items:
+                type: array
+                minItems: 2
+                maxItems: 2
+                items:
+                  type: number
+    DayInput:
+      type: object
+      required: [dayNumber, attractionIds]
+      properties:
+        dayNumber:
+          type: integer
+          minimum: 1
+        attractionIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+            minimum: 1
+    TripInput:
+      type: object
+      required: [destination, startDate, dayCount, days]
+      properties:
+        destination:
+          type: string
+        destinationId:
+          type: integer
+          format: int64
+          minimum: 0
+        startDate:
+          type: string
+          format: date-time
+        dayCount:
+          type: integer
+          minimum: 1
+          maximum: 30
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/DayInput'
+    Stop:
+      type: object
+      required: [position, attractionId]
+      properties:
+        position:
+          type: integer
+        attractionId:
+          type: integer
+          format: int64
+    Day:
+      type: object
+      required: [dayNumber, stops]
+      properties:
+        dayNumber:
+          type: integer
+        stops:
+          type: array
+          items:
+            $ref: '#/components/schemas/Stop'
+    Trip:
+      type: object
+      required: [id, userId, destination, startDate, dayCount, days, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        userId:
+          type: integer
+          format: int64
+        destinationId:
+          type: integer
+          format: int64
+          nullable: true
+        destination:
+          type: string
+        startDate:
+          type: string
+          format: date-time
+        dayCount:
+          type: integer
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/Day'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

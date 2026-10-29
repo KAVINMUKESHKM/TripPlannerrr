@@ -10,6 +10,12 @@ import { AttractionList } from "@/components/attraction-list";
 import { ItineraryEditor } from "@/components/itinerary-editor";
 import { RouteSummary as RouteSummaryView } from "@/components/route-summary";
 import { SiteHeader } from "@/components/site-header";
+import Alert from "@mui/material/Alert";
+import Button from "@mui/material/Button";
+import MenuItem from "@mui/material/MenuItem";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
+import TextField from "@mui/material/TextField";
 
 const MapView = dynamic(() => import("@/components/maplibre-map"), { ssr: false, loading: () => <div className="map-loading">Preparing your map…</div> });
 const PENDING_DRAFT = "tripplanner:pending-trip:v1";
@@ -30,6 +36,7 @@ export function PlannerClient({ tripId }: { tripId?: string }) {
   const [suggestions, setSuggestions] = useState<SearchDay[]>([]);
   const [selected, setSelected] = useState<number[][]>(() => blankDays(Math.min(14, Math.max(1, Number(params.get("days") || 3)))));
   const [places, setPlaces] = useState<Attraction[]>([]);
+  const [focusPlace, setFocusPlace] = useState<Attraction | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,6 +66,7 @@ export function PlannerClient({ tripId }: { tripId?: string }) {
     try {
       const data = await searchAttractions({ destination: searchDestination.trim(), days: count, date, category: selectedCategory || undefined });
       setSuggestions(data);
+      setFocusPlace(null);
       setNotice(data.some((day) => day.attractions.length) ? "Places are ready to add to your days." : "No places came back for those dates. Try another destination or category.");
     } catch (cause) {
       setSearchError(cause instanceof ApiError ? cause.message : "We couldn’t reach the planner. Check that the Go API is running and the database is ready.");
@@ -77,6 +85,8 @@ export function PlannerClient({ tripId }: { tripId?: string }) {
         if (!live) return;
         const found = loaded.map((place, index): Attraction => place ?? { id: ids[index], name: `Saved stop ${ids[index]}`, latitude: 0, longitude: 0 });
         setPlaces(found);
+        const firstDayStop = trip.days.find((day) => day.dayNumber === 1)?.stops[0];
+        setFocusPlace(found.find((place) => place.id === firstDayStop?.attractionId) ?? null);
         setDestination(trip.destination);
         setDayCount(trip.dayCount);
         setStartDate(trip.startDate.slice(0, 10));
@@ -105,6 +115,7 @@ export function PlannerClient({ tripId }: { tripId?: string }) {
       const draft = JSON.parse(raw) as Draft;
       if (!draft || typeof draft.destination !== "string" || !Array.isArray(draft.selected) || !Array.isArray(draft.places)) return;
       if (draft.destination !== destination) return;
+      setFocusPlace(draft.places.find((place) => place.id === draft.selected[0]?.[0]) ?? null);
       setStartDate(draft.startDate);
       setDayCount(draft.dayCount);
       setSelected(draft.selected);
@@ -121,7 +132,7 @@ export function PlannerClient({ tripId }: { tripId?: string }) {
   useEffect(() => {
     if (!canRoute) { setRoute(null); setRouteError(""); return; }
     let live = true;
-    setRouteLoading(true); setRouteError("");
+    setRoute(null); setRouteLoading(true); setRouteError("");
     getRoute(activePlaces.map((place) => ({ latitude: Number(place.latitude), longitude: Number(place.longitude) })))
       .then((result) => { if (live) setRoute(result); })
       .catch(() => { if (live) { setRoute(null); setRouteError("OSRM route details are unavailable right now."); } })
@@ -132,6 +143,7 @@ export function PlannerClient({ tripId }: { tripId?: string }) {
   function addPlace(place: Attraction) {
     setSelected((current) => current.map((day, index) => index === activeDay - 1 && !day.includes(place.id) ? [...day, place.id] : day));
     setPlaces((current) => current.some((item) => item.id === place.id) ? current : [...current, place]);
+    setFocusPlace(null);
     setNotice(`${place.name} added to Day ${activeDay}.`);
   }
 
@@ -147,6 +159,7 @@ export function PlannerClient({ tripId }: { tripId?: string }) {
       return day;
     }));
     setActiveDay(toDay);
+    setFocusPlace(allPlaces.find((place) => place.id === id) ?? null);
   }
 
   function reorder(dayNumber: number, index: number, direction: -1 | 1) {
@@ -197,29 +210,29 @@ export function PlannerClient({ tripId }: { tripId?: string }) {
   return <main className="planner-shell">
     <SiteHeader />
     <section className="planner-heading"><div><Link className="back-link" href={tripId ? "/trips" : "/"}>← {tripId ? "Saved trips" : "Home"}</Link><span className="eyebrow">A trip takes shape one stop at a time</span><h1>{tripId ? "Edit your itinerary." : "Make a day of it."}</h1><p>Gather a few places, give them an order, and leave some space between.</p></div>
-      <button className="button save-button" onClick={saveTrip} disabled={saving}>{saving ? "Saving…" : tripId ? "Save changes" : user ? "Save this trip" : "Sign in to save"}</button>
+      <Button className="save-button" variant="contained" onClick={saveTrip} disabled={saving}>{saving ? "Saving…" : tripId ? "Save changes" : user ? "Save this trip" : "Sign in to save"}</Button>
     </section>
 
     <form className="planner-search" onSubmit={submitSearch}>
-      <label>Destination<input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="City or place" required /></label>
-      <label>First day<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required /></label>
-      <label>Days<select value={dayCount} onChange={(event) => { const count = Number(event.target.value); setDayCount(count); setSelected((current) => Array.from({ length: count }, (_, index) => current[index] ?? [])); }} >{Array.from({ length: 14 }, (_, index) => <option key={index} value={index + 1}>{index + 1} {index === 0 ? "day" : "days"}</option>)}</select></label>
-      <label>Interests<select value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Any kind</option><option value="Nature">Nature</option><option value="History">History</option><option value="Culture">Culture</option><option value="Food">Food</option></select></label>
-      <button className="button" type="submit" disabled={loading}>{loading ? "Finding places…" : "Find places"}</button>
+      <div className="search-field"><label htmlFor="planner-destination">Destination</label><TextField id="planner-destination" value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="City or place" required /></div>
+      <div className="search-field"><label htmlFor="planner-date">First day</label><TextField id="planner-date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required /></div>
+      <div className="search-field"><label htmlFor="planner-days">Days</label><TextField id="planner-days" select value={dayCount} onChange={(event) => { const count = Number(event.target.value); setDayCount(count); setSelected((current) => Array.from({ length: count }, (_, index) => current[index] ?? [])); }} >{Array.from({ length: 14 }, (_, index) => <MenuItem key={index} value={index + 1}>{index + 1} {index === 0 ? "day" : "days"}</MenuItem>)}</TextField></div>
+      <div className="search-field"><label htmlFor="planner-interests">Interests</label><TextField id="planner-interests" select value={category} onChange={(event) => setCategory(event.target.value)}><MenuItem value="">Any kind</MenuItem><MenuItem value="Nature">Nature</MenuItem><MenuItem value="History">History</MenuItem><MenuItem value="Culture">Culture</MenuItem><MenuItem value="Food">Food</MenuItem></TextField></div>
+      <Button variant="contained" type="submit" disabled={loading}>{loading ? "Finding places…" : "Find places"}</Button>
     </form>
 
-    {searchError ? <div className="notice notice-error" role="alert"><strong>Places aren’t available yet.</strong><span>{searchError}</span><span>Start the Go API and make sure its database migrations are applied, then search again.</span><button className="text-button" onClick={() => runSearch(destination, dayCount, startDate, category)}>Try again</button></div> : null}
-    {saveError ? <div className="notice notice-error" role="alert">{saveError}</div> : null}
+    {searchError ? <Alert className="notice" severity="error" action={<Button color="inherit" size="small" onClick={() => runSearch(destination, dayCount, startDate, category)}>Try again</Button>}><strong>Places aren’t available yet.</strong> {searchError} Start the Go API and make sure its database migrations are applied, then search again.</Alert> : null}
+    {saveError ? <Alert className="notice" severity="error" role="alert">{saveError}</Alert> : null}
     {notice ? <p className="notice notice-good" role="status">{notice}</p> : null}
 
     <div className="planner-grid">
       <div className="planner-main">
-        <div className="day-tabs" role="tablist" aria-label="Choose a day to plan">{Array.from({ length: dayCount }, (_, index) => <button role="tab" aria-selected={activeDay === index + 1} className={`day-tab${activeDay === index + 1 ? " is-current" : ""}`} key={index} onClick={() => setActiveDay(index + 1)}><span>Day {index + 1}</span><small>{selected[index]?.length ?? 0} stops</small></button>)}</div>
-        <AttractionList attractions={allPlaces} selectedIds={selectedIds} onAdd={addPlace} />
+        <Tabs className="day-tabs" value={activeDay} onChange={(_, value: number) => { setActiveDay(value); setFocusPlace(selectedByDay[value - 1]?.[0] ?? null); }} variant="scrollable" scrollButtons="auto" aria-label="Choose a day to plan">{Array.from({ length: dayCount }, (_, index) => <Tab className="day-tab" key={index} value={index + 1} label={<><span>Day {index + 1}</span><small>{selected[index]?.length ?? 0} stops</small></>} />)}</Tabs>
+        <AttractionList attractions={allPlaces} selectedIds={selectedIds} onAdd={addPlace} onFocus={setFocusPlace} />
       </div>
       <aside className="planner-side" aria-label="Current trip details">
         <div className="map-heading"><div><span className="eyebrow">Your route at a glance</span><h2>{destination || "Your destination"}</h2></div><span className="map-provider">OpenFreeMap</span></div>
-        <MapView places={activePlaces} route={route} />
+        <MapView places={activePlaces} route={route} focusPlace={focusPlace} />
         <RouteSummaryView route={route} loading={routeLoading} error={routeError} stopCount={activePlaces.length} />
         <ItineraryEditor days={selectedByDay} suggestions={suggestions} onRemove={removePlace} onMove={movePlace} onReorder={reorder} />
         {!user ? <div className="save-prompt"><strong>Your plan stays in this tab.</strong><p>Sign in when you’re ready to save it and pick it up later.</p><Link className="quiet-link" href={`/login?next=${encodeURIComponent(`/plan?${new URLSearchParams({ destination, date: startDate, days: String(dayCount) })}`)}`}>Sign in or create an account ↗</Link></div> : null}

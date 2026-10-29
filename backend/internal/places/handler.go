@@ -14,21 +14,56 @@ import (
 type RouteProvider interface {
 	Route(context.Context, []providers.Waypoint) (providers.RouteSummary, error)
 }
+type RestaurantProvider interface {
+	Nearby(context.Context, providers.Coordinate) ([]providers.Restaurant, error)
+}
 type Handler struct {
 	SearchService Service
 	Store         *Repository
 	Router        RouteProvider
+	Restaurants   RestaurantProvider
 }
 
-func NewHandler(repo *Repository, geocoder Geocoder, weather WeatherProvider, router RouteProvider) *Handler {
-	return &Handler{SearchService: Service{Store: repo, Geocoder: geocoder, Weather: weather}, Store: repo, Router: router}
+func NewHandler(repo *Repository, geocoder Geocoder, weather WeatherProvider, router RouteProvider, restaurants RestaurantProvider) *Handler {
+	return &Handler{SearchService: Service{Store: repo, Geocoder: geocoder, Weather: weather}, Store: repo, Router: router, Restaurants: restaurants}
 }
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/attractions", h.search)
 	mux.HandleFunc("GET /api/v1/attractions/{id}", h.get)
+	mux.HandleFunc("GET /api/v1/attractions/{id}/restaurants", h.restaurants)
 	mux.HandleFunc("POST /api/v1/routes", h.route)
 	return mux
+}
+func (h *Handler) restaurants(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, 400, "attraction ID must be a positive integer")
+		return
+	}
+	place, err := h.Store.Get(r.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		writeError(w, 404, "attraction not found")
+		return
+	}
+	if err != nil {
+		writeError(w, 500, "could not load attraction")
+		return
+	}
+	if h.Restaurants == nil {
+		writeError(w, 503, "nearby restaurant search is not configured")
+		return
+	}
+	results, err := h.Restaurants.Nearby(r.Context(), providers.Coordinate{Latitude: place.Latitude, Longitude: place.Longitude})
+	if err != nil {
+		status := 502
+		if strings.Contains(err.Error(), "not configured") {
+			status = 503
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, 200, results)
 }
 func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	q, err := ParseSearchQuery(r.URL.Query().Get("destination"), r.URL.Query().Get("days"), r.URL.Query().Get("date"), r.URL.Query().Get("category"))

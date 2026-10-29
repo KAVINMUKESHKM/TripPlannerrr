@@ -1,10 +1,19 @@
 #ignoring env files
-server/.env
+**/.env
+**/.env.*
+!**/.env.example
 **/node_modules/
 .env
 .env.*
 !.env.example
-frontend/.next/
-frontend/node_modules/
+**/.next/
 frontend/*.tsbuildinfo
 backend/bin/
+backend/tripplanner-api
+frontend/public/assets/*
+!frontend/public/assets/seaside.jpg
+
+# local output and internal planning artifacts
+*.log
+.DS_Store
+docs/superpowers/

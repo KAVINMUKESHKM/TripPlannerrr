@@ -1,4 +1,4 @@
-import type { Attraction, RouteSummary, SearchDay, Trip, TripInput, User } from "./types";
+import type { Attraction, NearbyRestaurant, RouteSummary, SearchDay, Trip, TripInput, User } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
@@ -41,8 +41,13 @@ function normalizeAttraction(raw: Record<string, unknown>): Attraction | null {
     name,
     description: String(candidate.description ?? ""),
     category: String(candidate.category ?? "Place"),
+    best_climate: typeof candidate.best_climate === "string" ? candidate.best_climate : undefined,
+    ideal_weather: typeof candidate.ideal_weather === "string" ? candidate.ideal_weather : undefined,
+    ideal_temp_min: candidate.ideal_temp_min == null ? undefined : numeric(candidate.ideal_temp_min as number | string),
+    ideal_temp_max: candidate.ideal_temp_max == null ? undefined : numeric(candidate.ideal_temp_max as number | string),
     latitude: numeric(candidate.latitude as number | string),
     longitude: numeric(candidate.longitude as number | string),
+    source_url: typeof candidate.source_url === "string" ? candidate.source_url : undefined,
     image: typeof candidate.image === "string" ? candidate.image : undefined,
     address: typeof candidate.address === "string" ? candidate.address : undefined,
     rating: candidate.rating == null ? undefined : numeric(candidate.rating as number | string),
@@ -86,12 +91,16 @@ export const register = (input: { email: string; password: string; full_name: st
 export const login = (input: { email: string; password: string }) =>
   request<User>("/auth/login", { method: "POST", body: JSON.stringify(input) });
 export const logout = () => request<void>("/auth/logout", { method: "POST" });
+export const logoutAll = () => request<void>("/auth/logout-all", { method: "POST" });
+export const requestPasswordReset = (email: string) => request<{ message: string }>("/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) });
+export const resetPassword = (token: string, password: string) => request<void>("/auth/password/reset", { method: "POST", body: JSON.stringify({ token, password }) });
 export const currentUser = () => request<User>("/auth/me");
 export const googleSignInURL = `${API_BASE}/api/v1/auth/google`;
 
 export const listTrips = () => request<Trip[]>("/trips");
 export const getTrip = (id: string | number) => request<Trip>(`/trips/${id}`);
 export const getAttraction = (id: string | number) => request<Attraction>(`/attractions/${id}`);
+export const getNearbyRestaurants = (id: string | number) => request<NearbyRestaurant[]>(`/attractions/${id}/restaurants`);
 export const createTrip = (input: TripInput) => request<Trip>("/trips", { method: "POST", body: JSON.stringify(input) });
 export const updateTrip = (id: string | number, input: TripInput) => request<Trip>(`/trips/${id}`, { method: "PUT", body: JSON.stringify(input) });
 export const deleteTrip = (id: string | number) => request<void>(`/trips/${id}`, { method: "DELETE" });

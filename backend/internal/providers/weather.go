@@ -15,6 +15,7 @@ type Forecast struct {
 	Date        string  `json:"date"`
 	Condition   string  `json:"condition"`
 	Temperature float64 `json:"temperature"`
+	Hour        int     `json:"-"`
 }
 type Weather struct {
 	APIKey string
@@ -65,8 +66,12 @@ func (w Weather) Daily(ctx context.Context, point Coordinate, days int) ([]Forec
 		if len(date) > 10 {
 			date = date[:10]
 		}
+		hour := 0
+		if parsed, err := time.Parse("2006-01-02 15:04:05", item.DateTime); err == nil {
+			hour = parsed.Hour()
+		}
 		if _, exists := byDate[date]; !exists || strings.Contains(item.DateTime, "12:00:00") {
-			byDate[date] = Forecast{Date: date, Condition: strings.ToLower(item.Weather[0].Main), Temperature: item.Main.Temp}
+			byDate[date] = Forecast{Date: date, Condition: strings.ToLower(item.Weather[0].Main), Temperature: item.Main.Temp, Hour: hour}
 		}
 	}
 	forecasts := make([]Forecast, 0, len(byDate))
